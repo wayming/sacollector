@@ -1,0 +1,26 @@
+{
+  "0700": {
+    "code": "0700",
+    "name": "Tencent Holdings Limited",
+    "market_cap": 4011828256082,
+    "price": 440.2,
+    "change": -1.17,
+    "revenue": 873190200743
+  },
+  "4335": {
+    "code": "4335",
+    "name": "Intel Corporation",
+    "market_cap": 4768920029636,
+    "price": 300,
+    "change": 0,
+    "revenue": 421087407270
+  },
+  "4336": {
+    "code": "4336",
+    "name": "Applied Materials, Inc.",
+    "market_cap": 3688483317875,
+    "price": 1620,
+    "change": 170,
+    "revenue": 227389688960
+  }
+}

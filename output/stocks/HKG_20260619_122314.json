@@ -1,0 +1,42 @@
+{
+  "0700": {
+    "code": "0700",
+    "name": "Tencent Holdings Limited",
+    "market_cap": 3964990566519,
+    "price": 440.2,
+    "change": -1.17,
+    "revenue": 873190200743
+  },
+  "1398": {
+    "code": "1398",
+    "name": "Industrial and Commercial Bank of China Limited",
+    "market_cap": 2832662491449,
+    "price": 6.85,
+    "change": -2.7,
+    "revenue": 765419350754
+  },
+  "4333": {
+    "code": "4333",
+    "name": "Cisco Systems, Inc.",
+    "market_cap": 3692714156697,
+    "price": 750,
+    "change": 29.31,
+    "revenue": 475916966840
+  },
+  "4335": {
+    "code": "4335",
+    "name": "Intel Corporation",
+    "market_cap": 5278043671587,
+    "price": 300,
+    "change": 0,
+    "revenue": 421087407270
+  },
+  "4336": {
+    "code": "4336",
+    "name": "Applied Materials, Inc.",
+    "market_cap": 3840068781004,
+    "price": 1620,
+    "change": 170,
+    "revenue": 227389688960
+  }
+}

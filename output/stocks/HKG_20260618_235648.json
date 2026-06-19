@@ -1,0 +1,82 @@
+{
+  "0005": {
+    "code": "0005",
+    "name": "HSBC Holdings plc",
+    "market_cap": 2586282009967,
+    "price": 149,
+    "change": 0.68,
+    "revenue": 499991348700
+  },
+  "0700": {
+    "code": "0700",
+    "name": "Tencent Holdings Limited",
+    "market_cap": 3964990566519,
+    "price": 440.2,
+    "change": -1.17,
+    "revenue": 873190200743
+  },
+  "0939": {
+    "code": "0939",
+    "name": "China Construction Bank Corporation",
+    "market_cap": 2342825098431,
+    "price": 8.62,
+    "change": -1.03,
+    "revenue": 698453725194
+  },
+  "1288": {
+    "code": "1288",
+    "name": "Agricultural Bank of China Limited",
+    "market_cap": 2532038465782,
+    "price": 5.67,
+    "change": -2.74,
+    "revenue": 683015508024
+  },
+  "1398": {
+    "code": "1398",
+    "name": "Industrial and Commercial Bank of China Limited",
+    "market_cap": 2911690613604,
+    "price": 6.85,
+    "change": -2.7,
+    "revenue": 765419350754
+  },
+  "3750": {
+    "code": "3750",
+    "name": "Contemporary Amperex Technology Co., Limited",
+    "market_cap": 2179720077977,
+    "price": 708.5,
+    "change": -0.352,
+    "revenue": 532106180439
+  },
+  "3988": {
+    "code": "3988",
+    "name": "Bank of China Limited",
+    "market_cap": 2088008730397,
+    "price": 5.27,
+    "change": -0.94,
+    "revenue": 644460885127
+  },
+  "4333": {
+    "code": "4333",
+    "name": "Cisco Systems, Inc.",
+    "market_cap": 3623404463244,
+    "price": 750,
+    "change": 29.31,
+    "revenue": 475916966840
+  },
+  "4335": {
+    "code": "4335",
+    "name": "Intel Corporation",
+    "market_cap": 4768920029636,
+    "price": 300,
+    "change": 0,
+    "revenue": 421087407270
+  },
+  "4336": {
+    "code": "4336",
+    "name": "Applied Materials, Inc.",
+    "market_cap": 3688483317875,
+    "price": 1620,
+    "change": 170,
+    "revenue": 227389688960
+  }
+}
