@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"sacollector/internal/parser"
@@ -37,9 +38,9 @@ func (e *Exporter) ExportStockList(exchangeCode string, stocks map[string]parser
 }
 
 // ExportFinancial writes one JSON file per statement type for a single stock.
-// Filename: {code}_{latestDate}_{statementType}.json
-func (e *Exporter) ExportFinancial(code string, statements map[string]*parser.ResolvedFinancial) error {
-	dir := filepath.Join(e.outputDir, "financials", code)
+// Path: financials/{exchange}/{code}/{code}_{latestDate}_{statementType}.json
+func (e *Exporter) ExportFinancial(exchange, code string, statements map[string]*parser.ResolvedFinancial) error {
+	dir := filepath.Join(e.outputDir, "financials", strings.ToLower(exchange), code)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("creating financials output dir for %s: %w", code, err)
 	}

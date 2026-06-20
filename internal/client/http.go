@@ -1,6 +1,7 @@
 package client
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"log"
@@ -8,23 +9,46 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
 // HTTPClient wraps http.Client with rate limiting, default headers, and optional raw cache.
 type HTTPClient struct {
-	client   *http.Client
-	limiter  *time.Ticker
-	cacheDir string
+	client      *http.Client
+	limiter     *time.Ticker
+	cacheDir    string
+	rateMs      int
+	active      int32
+	cookie      string
+	bypassCache bool
 }
 
 // NewHTTPClient creates a new HTTPClient with the given rate limit interval.
 func NewHTTPClient(rateLimit time.Duration) *HTTPClient {
-	return &HTTPClient{
+	ms := int(rateLimit / time.Millisecond)
+	c := &HTTPClient{
 		client: &http.Client{
 			Timeout: 30 * time.Second,
+			Transport: &http.Transport{
+				MaxIdleConns:        100,
+				MaxIdleConnsPerHost: 20,
+				IdleConnTimeout:     90 * time.Second,
+			},
 		},
-		limiter: time.NewTicker(rateLimit),
+		rateMs: ms,
+	}
+	c.resetLimiter()
+	return c
+}
+
+func (c *HTTPClient) resetLimiter() {
+	if c.limiter != nil {
+		c.limiter.Stop()
+		c.limiter = nil
+	}
+	if c.rateMs > 0 {
+		c.limiter = time.NewTicker(time.Duration(c.rateMs) * time.Millisecond)
 	}
 }
 
@@ -33,8 +57,26 @@ func (c *HTTPClient) SetCacheDir(dir string) {
 	c.cacheDir = dir
 }
 
-// Wait blocks until the next rate-limit slot is available.
+// SetCookie sets the Cookie header for all requests.
+func (c *HTTPClient) SetCookie(cookie string) { c.cookie = cookie }
+
+// HasCookie returns true if a session cookie is set.
+func (c *HTTPClient) HasCookie() bool { return c.cookie != "" }
+
+// SetBypassCache enables/disables cache bypass.
+func (c *HTTPClient) SetBypassCache(b bool) { c.bypassCache = b }
+
+// SetRate adjusts the rate limiter interval. 0 disables rate limiting.
+func (c *HTTPClient) SetRate(ms int) {
+	c.rateMs = ms
+	c.resetLimiter()
+}
+
+// Wait blocks until the next rate-limit slot is available. No-op if rate is 0.
 func (c *HTTPClient) Wait() {
+	if c.limiter == nil {
+		return
+	}
 	<-c.limiter.C
 }
 
@@ -46,6 +88,31 @@ func (c *HTTPClient) Get(url string) ([]byte, error) {
 // GetWithHeaders performs a GET request with additional headers.
 func (c *HTTPClient) GetWithHeaders(url string, headers map[string]string) ([]byte, error) {
 	return c.getInternal(url, headers)
+}
+
+// GetWithCacheContext performs a GET with context cancellation, headers, and cache.
+func (c *HTTPClient) GetWithCacheContext(ctx context.Context, url string, headers map[string]string, cacheKey string) ([]byte, error) {
+	if !c.bypassCache && c.cacheDir != "" && cacheKey != "" {
+		cachePath := filepath.Join(c.cacheDir, cacheKey)
+		if data, err := os.ReadFile(cachePath); err == nil {
+			log.Printf("[Cache] Hit: %s", cachePath)
+			return data, nil
+		}
+	}
+	data, err := c.getInternalContext(ctx, url, headers)
+	if err != nil {
+		return nil, err
+	}
+	if c.cacheDir != "" && cacheKey != "" {
+		cachePath := filepath.Join(c.cacheDir, cacheKey)
+		os.MkdirAll(filepath.Dir(cachePath), 0755)
+		if err := os.WriteFile(cachePath, data, 0644); err != nil {
+			log.Printf("[Cache] Failed to write: %v", err)
+		} else {
+			log.Printf("[Cache] Saved: %s", cachePath)
+		}
+	}
+	return data, nil
 }
 
 // GetWithCache performs a GET request with headers and caches the raw response.
@@ -66,8 +133,8 @@ func (c *HTTPClient) GetWithCache(url string, headers map[string]string, cacheKe
 		return nil, err
 	}
 
-	// Save to cache
-	if c.cacheDir != "" && cacheKey != "" {
+	// Save to cache (skip if bypassing)
+	if !c.bypassCache && c.cacheDir != "" && cacheKey != "" {
 		cachePath := filepath.Join(c.cacheDir, cacheKey)
 		if err := os.MkdirAll(filepath.Dir(cachePath), 0755); err != nil {
 			log.Printf("[Cache] Failed to create dir: %v", err)
@@ -82,7 +149,11 @@ func (c *HTTPClient) GetWithCache(url string, headers map[string]string, cacheKe
 }
 
 func (c *HTTPClient) getInternal(url string, headers map[string]string) ([]byte, error) {
-	req, err := http.NewRequest("GET", url, nil)
+	return c.getInternalContext(context.Background(), url, headers)
+}
+
+func (c *HTTPClient) getInternalContext(ctx context.Context, url string, headers map[string]string) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
@@ -94,14 +165,16 @@ func (c *HTTPClient) getInternal(url string, headers map[string]string) ([]byte,
 	for k, v := range headers {
 		req.Header.Set(k, v)
 	}
+	if c.cookie != "" {
+		req.Header.Set("Cookie", c.cookie)
+	}
+
+	// Track concurrency
+	n := atomic.AddInt32(&c.active, 1)
+	defer atomic.AddInt32(&c.active, -1)
 
 	// Log request
-	log.Printf("[HTTP] GET %s", url)
-	for k, vs := range req.Header {
-		for _, v := range vs {
-			log.Printf("[HTTP]   %s: %s", k, v)
-		}
-	}
+	log.Printf("[HTTP #%d] GET %s", n, url)
 
 	resp, err := c.client.Do(req)
 	if err != nil {
@@ -159,7 +232,14 @@ func (c *HTTPClient) GetJSON(url string) ([]byte, error) {
 	return c.Get(url)
 }
 
+// Active returns the current in-flight request count.
+func (c *HTTPClient) Active() int32 {
+	return atomic.LoadInt32(&c.active)
+}
+
 // Stop releases the rate limiter resources.
 func (c *HTTPClient) Stop() {
-	c.limiter.Stop()
+	if c.limiter != nil {
+		c.limiter.Stop()
+	}
 }

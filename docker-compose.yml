@@ -1,0 +1,25 @@
+services:
+  redis:
+    image: redis:7-alpine
+    command: redis-server --save 60 1 --appendonly yes
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+
+  collector:
+    build: .
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./output:/app/output
+    depends_on:
+      - redis
+    restart: unless-stopped
+    command: -redis-addr redis:6379 -output /app/output -port 8080
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+
+volumes:
+  redis_data:

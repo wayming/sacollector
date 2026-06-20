@@ -2,128 +2,107 @@ package main
 
 import (
 	"flag"
-	"fmt"
 	"log"
+	"net/http"
 	"os"
-	"strings"
 	"time"
 
+	"sacollector/internal/api"
 	"sacollector/internal/client"
 	"sacollector/internal/exporter"
 	"sacollector/internal/financials"
-	"sacollector/internal/parser"
 	"sacollector/internal/screener"
+	"sacollector/internal/store"
 )
 
-var validExchanges = map[string]bool{
-	"ASX":    true,
-	"SHA":    true,
-	"HKG":    true,
-	"SHE":    true,
-	"NASDAQ": true,
-}
-
 func main() {
-	exchange := flag.String("exchange", "HKG", "Exchange code (ASX, SHA, HKG, SHE, NASDAQ)")
-	symbol := flag.String("symbol", "", "Fetch a single stock symbol (requires -exchange, skips Phase 1)")
-	outputDir := flag.String("output", "./output", "Output directory for JSON files")
-	limit := flag.Int("limit", 0, "Max stocks to process (0 = all)")
-	workers := flag.Int("workers", 4, "Number of concurrent workers for Phase 2")
-	rateLimitMs := flag.Int("rate-limit", 1000, "Rate limit between HTTP requests in ms")
-	skipFinancials := flag.Bool("skip-financials", false, "Skip Phase 2 (financial statements)")
+	port := flag.String("port", "8080", "Web server port")
+	outputDir := flag.String("output", "./output", "Output directory")
+	workers := flag.Int("workers", 4, "Worker count")
+	rateLimitMs := flag.Int("rate-limit", 1000, "Rate limit ms")
+	redisAddr := flag.String("redis-addr", "127.0.0.1:6379", "Redis address")
+	devMode := flag.Bool("dev", false, "Dev mode: serve CORS for localhost:5173")
 	flag.Parse()
 
-	exchangeCode := strings.ToUpper(*exchange)
-	if !validExchanges[exchangeCode] {
-		fmt.Fprintf(os.Stderr, "Invalid exchange code: %s. Valid: ASX, SHA, HKG, SHE, NASDAQ\n", exchangeCode)
-		os.Exit(1)
-	}
+	log.Printf("=== sacollector server ===")
+	log.Printf("Port: %s, Output: %s", *port, *outputDir)
 
-	exchangeLower := strings.ToLower(exchangeCode)
-
-	log.Printf("=== sacollector ===")
-	log.Printf("Exchange: %s", exchangeCode)
-	log.Printf("Output: %s", *outputDir)
-	log.Printf("Workers: %d, Rate limit: %dms", *workers, *rateLimitMs)
-
-	// Initialize shared HTTP client with raw cache
+	// HTTP client
 	httpClient := client.NewHTTPClient(time.Duration(*rateLimitMs) * time.Millisecond)
 	httpClient.SetCacheDir(*outputDir + "/raw")
 	defer httpClient.Stop()
 
-	// Setup components
+	// Redis
+	redisStore := store.NewRedisStore(*redisAddr, "default")
+	if err := redisStore.Ping(); err != nil {
+		log.Printf("Redis not available (%s) — checkpoint disabled", *redisAddr)
+	} else {
+		log.Printf("Redis: connected (%s)", *redisAddr)
+	}
+	defer redisStore.Close()
+
+	// Components
 	scr := screener.New(httpClient)
 	finCollector := financials.New(httpClient, *workers)
 	exp := exporter.New(*outputDir)
 
-	// ========== Phase 1: Fetch Stock List (skipped if -symbol is set) ==========
-	var allStocks []parser.StockInfo
+	// Log broker: captures all log output and broadcasts via SSE
+	logBroker := &api.LogBroker{}
+	logBroker.AttachToLog()
 
-	if *symbol != "" {
-		log.Printf("=== Single symbol mode: %s ===", *symbol)
-		allStocks = []parser.StockInfo{{Code: *symbol, Name: *symbol}}
-	} else {
-		log.Printf("=== Phase 1: Fetching stock list for %s ===", exchangeCode)
+	// API server
+	srv := &api.Server{
+		RedisStore: redisStore,
+		Exporter:   exp,
+		Collector:  finCollector,
+		Screener:   scr,
+		HTTPClient: httpClient,
+		LogBroker:  logBroker,
+		OutputDir:  *outputDir,
+	}
 
-		allPages, err := scr.FetchAllStocks(exchangeCode)
-		if err != nil {
-			log.Fatalf("Phase 1 failed: %v", err)
-		}
+	mux := http.NewServeMux()
+	srv.RegisterRoutes(mux)
 
-		// Export each page as a separate JSON, flatten for Phase 2
-		for i, pageStocks := range allPages {
-			stockMap := parser.BuildStockMap(pageStocks)
-			if err := exp.ExportStockList(exchangeCode, stockMap, i+1); err != nil {
-				log.Fatalf("Exporting stock list page %d: %v", i+1, err)
+	// Static files (production) or CORS proxy (dev)
+	if *devMode {
+		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Access-Control-Allow-Origin", "http://localhost:5173")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+			if r.Method == "OPTIONS" {
+				w.WriteHeader(http.StatusOK)
+				return
 			}
-			allStocks = append(allStocks, pageStocks...)
-		}
-
-		log.Printf("Phase 1 complete: %d stocks across %d pages", len(allStocks), len(allPages))
-
-		// Apply limit if specified
-		if *limit > 0 && *limit < len(allStocks) {
-			allStocks = allStocks[:*limit]
-			log.Printf("Limited to %d stocks", *limit)
+			http.Error(w, "Dev mode: use Vite at http://localhost:5173", http.StatusNotFound)
+		})
+	} else {
+		webDir := "web/dist"
+		if _, err := os.Stat(webDir); err == nil {
+			fs := http.FileServer(http.Dir(webDir))
+			mux.Handle("/", fs)
+			log.Printf("Serving static files from %s", webDir)
+		} else {
+			mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/" {
+					w.Write([]byte(indexPage))
+					return
+				}
+				http.NotFound(w, r)
+			})
+			log.Printf("No web/dist found, serving placeholder page")
 		}
 	}
 
-	// ========== Phase 2: Fetch Financial Statements ==========
-	if *skipFinancials {
-		log.Printf("Skipping Phase 2 (--skip-financials)")
-		log.Printf("Done.")
-		return
+	log.Printf("Listening on :%s", *port)
+	if err := http.ListenAndServe(":"+*port, mux); err != nil {
+		log.Fatalf("Server error: %v", err)
 	}
-
-	log.Printf("=== Phase 2: Fetching financial statements for %d stocks ===", len(allStocks))
-
-	results := finCollector.FetchAll(allStocks, exchangeLower)
-
-	successCount := 0
-	failCount := 0
-	for code, result := range results {
-		if result.Error != nil {
-			log.Printf("[%s] Failed: %v", code, result.Error)
-			failCount++
-			continue
-		}
-
-		if len(result.Statements) == 0 {
-			log.Printf("[%s] No statements collected", code)
-			failCount++
-			continue
-		}
-
-		if err := exp.ExportFinancial(code, result.Statements); err != nil {
-			log.Printf("[%s] Export error: %v", code, err)
-			failCount++
-			continue
-		}
-
-		successCount++
-	}
-
-	log.Printf("=== Done ===")
-	log.Printf("Phase 1: %d stocks exported", len(allStocks))
-	log.Printf("Phase 2: %d success, %d failed", successCount, failCount)
 }
+
+const indexPage = `<!DOCTYPE html>
+<html><head><title>sacollector</title></head>
+<body><h1>sacollector API</h1>
+<p>Build the frontend: <code>cd web && npm run build</code></p>
+<p>API: <a href="/api/health">/api/health</a></p>
+</body></html>`
