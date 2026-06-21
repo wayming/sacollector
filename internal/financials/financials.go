@@ -70,11 +70,7 @@ func (c *Collector) FetchAll(stocks []parser.StockInfo, exchangeLower string) ma
 					workerID, stock.Code, stock.Name)
 
 				var result *StockResult
-				if exchangeLower == "nasdaq" {
-					result = c.fetchOneNASDAQ(context.Background(), stock)
-				} else {
-					result = c.fetchOneInternational(context.Background(), stock, exchangeLower)
-				}
+				result = c.fetchOneInternational(context.Background(), stock, exchangeLower)
 
 				mu.Lock()
 				results[stock.Code] = result
@@ -153,11 +149,7 @@ func (c *Collector) FetchFromQueueWithContext(ctx context.Context, redisStore *s
 					workerID, stock.Code, stock.Name, done, total)
 
 				var result *StockResult
-				if exchangeLower == "nasdaq" {
-					result = c.fetchOneNASDAQ(ctx, stock)
-				} else {
-					result = c.fetchOneInternational(ctx, stock, exchangeLower)
-				}
+				result = c.fetchOneInternational(ctx, stock, exchangeLower)
 
 				elapsed := time.Since(tStart).Milliseconds()
 				if result.Error != nil || len(result.Statements) == 0 {
@@ -230,24 +222,19 @@ func (c *Collector) fetchOneInternational(ctx context.Context, stock parser.Stoc
 	for _, st := range AllStatementTypes() {
 		stmtOK := false
 		for _, pe := range periods {
-			var url, cacheKey string
-			useExport := c.client.HasCookie()
-			exUpper := strings.ToUpper(exchangeLower)
-			suffix := st + "_" + pe + ".json"
-
-			if useExport {
+			var url string
+			if exchangeLower == "nasdaq" || exchangeLower == "nyse" {
 				url = fmt.Sprintf(
-					"https://stockanalysis.com/fetch/financials-export?exp=single&s=%s-%s&t=a&st=%s&pe=%s",
-					exUpper, stock.Code, st, pe,
+					"https://stockanalysis.com/stocks/%s/financials/%s/__data.json?p=%s&x-sveltekit-trailing-slash=1&x-sveltekit-invalidated=011",
+					stock.Code, st, pe,
 				)
-				cacheKey = fmt.Sprintf("%s/%s/%s", exchangeLower, stock.Code, suffix)
 			} else {
 				url = fmt.Sprintf(
 					"https://stockanalysis.com/quote/%s/%s/financials/%s/__data.json?p=%s&x-sveltekit-trailing-slash=1&x-sveltekit-invalidated=011",
 					exchangeLower, stock.Code, st, pe,
 				)
-				cacheKey = fmt.Sprintf("%s/%s/%s", exchangeLower, stock.Code, suffix)
 			}
+			cacheKey := fmt.Sprintf("%s/%s/%s_%s.json", exchangeLower, stock.Code, st, pe)
 			t0 := time.Now()
 			c.client.Wait()
 			raw, err := c.client.GetWithCacheContext(ctx, url, financialsHeaders, cacheKey)
@@ -258,12 +245,7 @@ func (c *Collector) fetchOneInternational(ctx context.Context, stock parser.Stoc
 			}
 
 			t1 := time.Now()
-			var resolved *parser.ResolvedFinancial
-			if useExport {
-				resolved, err = parser.ParseExportHTML(raw, st)
-			} else {
-				resolved, err = parser.ParseFinancial(raw)
-			}
+			resolved, err := parser.ParseFinancial(raw)
 			tParse := time.Since(t1).Milliseconds()
 			if err != nil {
 				failReasons = append(failReasons, fmt.Sprintf("%s(%s) parse=%dms: %v", st, pe, tParse, err))
@@ -298,41 +280,4 @@ func (c *Collector) fetchOneInternational(ctx context.Context, stock parser.Stoc
 	return result
 }
 
-// fetchOneNASDAQ fetches the single metrics endpoint for NASDAQ stocks.
-func (c *Collector) fetchOneNASDAQ(ctx context.Context, stock parser.StockInfo) *StockResult {
-	result := &StockResult{
-		Code:       stock.Code,
-		Statements: make(map[string]*parser.ResolvedFinancial),
-	}
 
-	// Try each period in order of preference
-	var failReasons []string
-	for _, pe := range periods {
-		url := fmt.Sprintf(
-			"https://stockanalysis.com/stocks/%s/financials/metrics/__data.json?p=%s&x-sveltekit-trailing-slash=1&x-sveltekit-invalidated=011",
-			stock.Code, pe,
-		)
-
-		cacheKey := fmt.Sprintf("nasdaq/%s/metrics_%s.json", stock.Code, pe)
-		c.client.Wait()
-		raw, err := c.client.GetWithCacheContext(ctx, url, financialsHeaders, cacheKey)
-		if err != nil {
-			failReasons = append(failReasons, fmt.Sprintf("metrics(%s): %v", pe, err))
-			continue
-		}
-
-		resolved, err := parser.ParseFinancial(raw)
-		if err != nil {
-			failReasons = append(failReasons, fmt.Sprintf("metrics(%s): parse: %v", pe, err))
-			continue
-		}
-
-		result.Statements["metrics"] = resolved
-		log.Printf("[Financials] NASDAQ %s: metrics OK [%s] (%d datekeys, period=%s)",
-			stock.Code, pe, len(resolved.DateKeys), resolved.Period)
-		return result
-	}
-
-	result.Error = fmt.Errorf("all periods failed for %s: %v", stock.Code, failReasons)
-	return result
-}

@@ -3,7 +3,7 @@ import { fetchHealth, fetchStocks, startJob, stopJob, fetchJobStatus, fetchDownl
 import type { JobStatus, StockItem, DownloadedStock, StockDetail } from './api';
 import LogViewer from './components/LogViewer';
 
-const EXCHANGES = ['HKG', 'ASX', 'SHA', 'SHE', 'NASDAQ'];
+const EXCHANGES = ['HKG', 'ASX', 'SHA', 'SHE', 'NASDAQ', 'NYSE'];
 
 function badgeClass(state: string) {
   if (state === 'running') return 'badge badge-running';

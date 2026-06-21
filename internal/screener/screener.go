@@ -14,11 +14,12 @@ const screenerURL = "https://stockanalysis.com/_api/endpoints/screener/table"
 // exchangeStockCount maps exchange codes to their total stock count (cn parameter).
 // This avoids unnecessary pagination by requesting the exact total in one page.
 var exchangeStockCount = map[string]int{
-	"ASX":    1813,
-	"SHA":    2356,
-	"HKG":    2753,
-	"SHE":    2931,
-	"NASDAQ": 3399,
+	"ASX":    5000,
+	"SHA":    5000,
+	"HKG":    5000,
+	"SHE":    5000,
+	"NASDAQ": 5000,
+	"NYSE":   5000,
 }
 
 // Screener fetches the stock list for a given exchange code.
@@ -86,7 +87,7 @@ func (s *Screener) fetchPage(exchangeCode string, page int) ([]byte, error) {
 
 	// NASDAQ uses a different filter/type format than international exchanges
 	var fullURL string
-	if exchangeCode == "NASDAQ" {
+	if exchangeCode == "NASDAQ" || exchangeCode == "NYSE" {
 		fullURL = fmt.Sprintf(
 			"%s?type=s&m=marketCap&s=desc&c=no,s,n,marketCap,price,change,revenue&sc=marketCap&cn=%d&f=exchange-is-%s&p=%d&i=stocks",
 			screenerURL, cn, exchangeCode, page,
