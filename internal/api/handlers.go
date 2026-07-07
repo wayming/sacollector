@@ -69,6 +69,9 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	if s.LogBroker != nil {
 		mux.HandleFunc("/api/logs", s.LogBroker.HandleLogs)
 	}
+		mux.HandleFunc("/api/mcp/list-metrics", s.handleMcpListMetrics)
+		mux.HandleFunc("/api/mcp/data-period", s.handleMcpDataPeriod)
+		mux.HandleFunc("/api/mcp/financials", s.handleMcpFinancials)
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {

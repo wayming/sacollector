@@ -5,6 +5,11 @@ services:
     volumes:
       - redis_data:/data
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
 
   collector:
     build: .
@@ -13,13 +18,28 @@ services:
     volumes:
       - ./output:/app/output
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
     restart: unless-stopped
     command: -redis-addr redis:6379 -output /app/output -port 8080
     deploy:
       resources:
         limits:
           cpus: '4'
+
+  mcp-server:
+    build: .
+    ports:
+      - "8081:8081"
+    volumes:
+      - ./output:/app/output
+    restart: unless-stopped
+    entrypoint: ["./mcp-server"]
+    command: -http -addr :8081 -output /app/output
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
 
 volumes:
   redis_data:

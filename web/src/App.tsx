@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { fetchHealth, fetchStocks, startJob, stopJob, fetchJobStatus, fetchDownloaded, fetchStockDetail } from './api';
 import type { JobStatus, StockItem, DownloadedStock, StockDetail } from './api';
 import LogViewer from './components/LogViewer';
+import McpTest from './components/McpTest';
 
 const EXCHANGES = ['HKG', 'ASX', 'SHA', 'SHE', 'NASDAQ', 'NYSE'];
 
@@ -13,6 +14,7 @@ function badgeClass(state: string) {
 }
 
 export default function App() {
+  const [page, setPage] = useState<'collector' | 'mcp'>('collector');
   const [redisOk, setRedisOk] = useState(false);
   const [job, setJob] = useState<JobStatus | null>(null);
   const [exchange, setExchange] = useState('HKG');
@@ -119,6 +121,24 @@ export default function App() {
         </div>
       </header>
 
+      <nav style={{ display: 'flex', gap: 0, marginBottom: 16, borderBottom: '1px solid var(--border)' }}>
+        <button onClick={() => setPage('collector')} style={{
+          padding: '8px 20px', border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 600,
+          background: page === 'collector' ? 'var(--accent)' : 'transparent',
+          color: page === 'collector' ? '#fff' : 'var(--text-muted)',
+          borderRadius: '6px 6px 0 0', transition: 'background .2s',
+        }}>Collector</button>
+        <button onClick={() => setPage('mcp')} style={{
+          padding: '8px 20px', border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 600,
+          background: page === 'mcp' ? 'var(--accent)' : 'transparent',
+          color: page === 'mcp' ? '#fff' : 'var(--text-muted)',
+          borderRadius: '6px 6px 0 0', transition: 'background .2s',
+        }}>MCP Test</button>
+      </nav>
+
+      {page === 'mcp' ? (
+        <div style={{ flex: 1, overflow: 'hidden' }}><McpTest /></div>
+      ) : (
       <div className="layout" style={{ gridTemplateColumns: logOpen ? "280px 1fr 1fr" : "280px 1fr" }}>
         {/* Column 1: Job */}
         <div className="col">
@@ -265,7 +285,8 @@ export default function App() {
           )}
         </div>
       </div>
-      
+      )}
+
     </>
   );
 }
