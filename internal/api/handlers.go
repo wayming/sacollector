@@ -320,7 +320,7 @@ func (s *Server) handleOutputList(w http.ResponseWriter, r *http.Request) {
 			stocks = append(stocks, se{Code: e.Name(), Exchange: strings.ToUpper(ex.Name()), Files: names})
 		}
 	}
-	sort.Slice(stocks, func(i, j int) bool { return stocks[i].Code > stocks[j].Code })
+	sort.Slice(stocks, func(i, j int) bool { return stocks[i].Code < stocks[j].Code })
 	writeJSON(w, map[string]interface{}{"stocks": stocks})
 }
 

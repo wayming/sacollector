@@ -224,7 +224,7 @@ export default function App() {
                       </div>
                       {expandedEx.has(ex) && (
                         <div style={{ paddingLeft: 16 }}>
-                          {tree[ex].filter(d => !dlSearch || d.code.includes(dlSearch)).slice(0, 200).map(d => (
+                          {tree[ex].filter(d => !dlSearch || d.code.includes(dlSearch)).slice(0, 1000).map(d => (
                             <div key={d.code}
                               onClick={() => handleSelect(d.exchange, d.code)}
                               style={{ padding: '4px 10px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between',
