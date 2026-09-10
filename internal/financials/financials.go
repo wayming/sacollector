@@ -27,8 +27,21 @@ func AllStatementTypes() []string {
 	return []string{StmtBalanceSheet, StmtCashFlow, StmtIncomeStatement, StmtRatios}
 }
 
-// periods to try in order of preference (quarterly → half-year → annual).
-var periods = []string{"quarterly", "half-year", "annual"}
+// periods to try in order of preference (ttm → quarterly → half-year → annual).
+// NOTE: stockanalysis.com names the TTM view "trailing" (p=trailing). The value
+// "ttm" is NOT recognized by the API — it is silently ignored and the server
+// falls back to annual data, so the ttm period never actually gets fetched.
+var periods = []string{"trailing", "quarterly", "half-year", "annual"}
+
+// periodMatches reports whether the period reported in the API payload matches
+// the requested URL param. stockanalysis.com serves the trailing-twelve-month
+// view (p=trailing) with period "ttm" in the payload.
+func periodMatches(requested, actual string) bool {
+	if requested == "trailing" {
+		return actual == "ttm"
+	}
+	return actual == requested
+}
 
 // financialsHeaders are HTTP headers required for the __data.json endpoint.
 var financialsHeaders = map[string]string{
@@ -249,6 +262,14 @@ func (c *Collector) fetchOneInternational(ctx context.Context, stock parser.Stoc
 			tParse := time.Since(t1).Milliseconds()
 			if err != nil {
 				failReasons = append(failReasons, fmt.Sprintf("%s(%s) parse=%dms: %v", st, pe, tParse, err))
+				continue
+			}
+
+			// The API silently falls back to another period when p= is not a
+			// value it recognizes (e.g. p=ttm returns annual data), so verify
+			// the payload actually matches what we asked for before accepting it.
+			if !periodMatches(pe, resolved.Period) {
+				failReasons = append(failReasons, fmt.Sprintf("%s(%s) parse=%dms: period mismatch (got %q)", st, pe, tParse, resolved.Period))
 				continue
 			}
 
