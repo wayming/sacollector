@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
 )
@@ -12,13 +14,24 @@ import (
 type LogBroker struct {
 	mu       sync.Mutex
 	channels []chan string
+	logFile  *os.File
 }
 
-// Write implements io.Writer. Prepends microsecond timestamp, broadcasts to subscribers.
+// Write implements io.Writer. Prepends microsecond timestamp, writes to stderr,
+// log file (if set), and broadcasts to SSE subscribers.
 func (b *LogBroker) Write(p []byte) (int, error) {
 	now := time.Now().Format("15:04:05.000000")
 	line := now + " " + string(p)
+
+	// Console (stderr) — write without holding the lock
+	os.Stderr.WriteString(line)
+
 	b.mu.Lock()
+	// Log file
+	if b.logFile != nil {
+		b.logFile.WriteString(line)
+	}
+	// SSE subscribers
 	for _, ch := range b.channels {
 		select {
 		case ch <- line:
@@ -27,6 +40,34 @@ func (b *LogBroker) Write(p []byte) (int, error) {
 	}
 	b.mu.Unlock()
 	return len(p), nil
+}
+
+// OpenLogFile creates a timestamped log file under the given directory.
+// Must be called before any logging occurs to ensure file capture.
+func (b *LogBroker) OpenLogFile(logDir string) error {
+	if err := os.MkdirAll(logDir, 0755); err != nil {
+		return fmt.Errorf("creating log dir %s: %w", logDir, err)
+	}
+	filename := filepath.Join(logDir, time.Now().Format("2006-01-02_150405")+".log")
+	f, err := os.Create(filename)
+	if err != nil {
+		return fmt.Errorf("creating log file %s: %w", filename, err)
+	}
+	b.mu.Lock()
+	b.logFile = f
+	b.mu.Unlock()
+	fmt.Fprintf(os.Stderr, "[log] Writing logs to %s\n", filename)
+	return nil
+}
+
+// CloseLogFile closes the log file if open.
+func (b *LogBroker) CloseLogFile() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.logFile != nil {
+		b.logFile.Close()
+		b.logFile = nil
+	}
 }
 
 // Subscribe returns a channel that receives log lines.

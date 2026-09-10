@@ -24,6 +24,12 @@ func main() {
 	devMode := flag.Bool("dev", false, "Dev mode: serve CORS for localhost:5173")
 	flag.Parse()
 
+	// Log broker: set up first so all subsequent log output is captured
+	logBroker := &api.LogBroker{}
+	logBroker.AttachToLog()
+	logBroker.OpenLogFile(*outputDir + "/logs")
+	defer logBroker.CloseLogFile()
+
 	log.Printf("=== sacollector server ===")
 	log.Printf("Port: %s, Output: %s", *port, *outputDir)
 
@@ -45,10 +51,6 @@ func main() {
 	scr := screener.New(httpClient)
 	finCollector := financials.New(httpClient, *workers)
 	exp := exporter.New(*outputDir)
-
-	// Log broker: captures all log output and broadcasts via SSE
-	logBroker := &api.LogBroker{}
-	logBroker.AttachToLog()
 
 	// API server
 	srv := &api.Server{
